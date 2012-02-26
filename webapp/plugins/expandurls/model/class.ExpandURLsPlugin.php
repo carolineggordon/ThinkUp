@@ -61,20 +61,23 @@ class ExpandURLsPlugin extends Plugin implements CrawlerPlugin {
         (int)$options['links_to_expand']->option_value : 1500;
 
         if ($this->link_limit != 0) {
+            //Get short links into table via initial expansion
+            self::expandOriginalURLs();
+
+            //Capture click counts for bit.ly URLs
+            if (isset($options['bitly_api_key']->option_value,
+            $options['bitly_login']->option_value)) {
+                self::acquireBitlyClickStats($options['bitly_api_key']->option_value,
+                $options['bitly_login']->option_value);
+            }
+
+            //TODO Capture click counts for goo.gl URLs
+
             //Flickr image thumbnails
             if (isset($options['flickr_api_key']->option_value)) {
                 self::expandFlickrThumbnails($options['flickr_api_key']->option_value);
             }
 
-            //Bit.ly URLs
-            if (isset($options['bitly_api_key']->option_value,
-            $options['bitly_login']->option_value)) {
-                self::expandBitlyLinks($options['bitly_api_key']->option_value,
-                $options['bitly_login']->option_value);
-            }
-
-            //Remaining links
-            self::expandRemainingURLs();
         } else {
             $logger->logUserInfo("Limit of links to expand reached.", __METHOD__.','.__LINE__);
         }
@@ -131,9 +134,9 @@ class ExpandURLsPlugin extends Plugin implements CrawlerPlugin {
      * @param str bitly api key
      * @param str bitly login name
      */
-    public function expandBitlyLinks($api_key, $bit_login) {
+    public function acquireBitlyClickStats($api_key, $bit_login) {
         $logger = Logger::getInstance();
-        $link_dao = DAOFactory::getDAO('LinkDAO');
+        $short_link_dao = DAOFactory::getDAO('ShortLinkDAO');
 
         $logger->setUsername(null);
         $api_accessor = new BitlyAPIAccessor($api_key, $bit_login);
@@ -141,31 +144,33 @@ class ExpandURLsPlugin extends Plugin implements CrawlerPlugin {
         $bitly_urls = array('http://bit.ly/', 'http://bitly.com/', 'http://j.mp/');
         foreach ($bitly_urls as $bitly_url) {
             if ($this->link_limit != 0) {
-                $bitly_links_to_expand = $link_dao->getLinksToExpandByURL($bitly_url, $this->link_limit);
+                //all short links first seen in the last 48 hours
+                $bitly_links_to_update = $short_link_dao->getLinksToUpdate($bitly_url);
 
-                if (count($bitly_links_to_expand) > 0) {
-                    $logger->logUserInfo(count($bitly_links_to_expand). " $bitly_url" . " links to expand.",
-                    __METHOD__.','.__LINE__);
+                if (count($bitly_links_to_update) > 0) {
+                    $logger->logUserInfo(count($bitly_links_to_update). " $bitly_url" .
+                    " links to acquire click stats for.", __METHOD__.','.__LINE__);
                 } else {
-                    $logger->logUserInfo("There are no " . $bitly_url . " links to expand.", __METHOD__.','.__LINE__);
+                    $logger->logUserInfo("There are no " . $bitly_url . " links to fetch click stats for.",
+                    __METHOD__.',', __LINE__);
                 }
 
                 $total_links = 0;
                 $total_errors = 0;
-                foreach ($bitly_links_to_expand as $link) {
+                foreach ($bitly_links_to_update as $link) {
                     $link_data = $api_accessor->getBitlyLinkData($link);
-                    if ($link_data["expanded_url"] != '') {
-                        $link_dao->saveExpandedUrl($link, $link_data["expanded_url"], $link_data["title"], '',
-                        $link_data["clicks"]);
+                    if ($link_data["clicks"] != '') {
+                        //save click total here
+                        $short_link_dao->saveClickCount($link, $link_data["clicks"]);
+                        //@TODO Save title & description in links table
                         $total_links = $total_links + 1;
                     } elseif ($link_data["error"] != '') {
-                        $link_dao->saveExpansionError($link, $link_data["error"]);
                         $total_errors = $total_errors + 1;
                     }
                 }
 
-                $logger->logUserSuccess($total_links. " " . $bitly_url . " links expanded (".$total_errors." errors)",
-                __METHOD__.','.__LINE__);
+                $logger->logUserSuccess($total_links. " " . $bitly_url . " link click stats acquired (".
+                $total_errors." errors)", __METHOD__.','.__LINE__);
             }
         }
     }
@@ -173,7 +178,7 @@ class ExpandURLsPlugin extends Plugin implements CrawlerPlugin {
     /**
      * Save expanded version of all unexpanded URLs to data store.
      */
-    public function expandRemainingURLs() {
+    public function expandOriginalURLs() {
         $logger = Logger::getInstance();
         $link_dao = DAOFactory::getDAO('LinkDAO');
         $short_link_dao = DAOFactory::getDAO('ShortLinkDAO');

@@ -34,4 +34,19 @@ interface ShortLinkDAO {
      * @return int Insert ID
      */
     public function insert($link_id, $short_url);
+
+    /**
+     * Get all short URLs captured in the past 48 hours.
+     * @param str $bitly_url
+     * @return array of strings, short URLs
+     */
+    public function getLinksToUpdate($bitly_url);
+
+    /**
+     * Save click count for a short URL.
+     * @param str $short_url
+     * @param int $click_count
+     * @return int Number of rows updated
+     */
+    public function saveClickCount($short_url, $click_count);
 }

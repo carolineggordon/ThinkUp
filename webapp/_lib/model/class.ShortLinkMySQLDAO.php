@@ -38,4 +38,36 @@ class ShortLinkMySQLDAO extends PDODAO {
         $ps = $this->execute($q, $vars);
         return $this->getInsertId($ps);
     }
+
+    public function getLinksToUpdate($url) {
+        $q  = "SELECT sl.short_url ";
+        $q .= "FROM #prefix#links_short AS sl ";
+        $q .= "WHERE sl.first_seen >= date_sub(current_date, INTERVAL 2 day) ";
+        $q .= "AND sl.short_url LIKE :short_url ";
+        $q .= "GROUP BY sl.short_url ";
+        $vars = array( ':short_url'=>$url."%" );
+
+        if ($this->profiler_enabled) Profiler::setDAOMethod(__METHOD__);
+        $ps = $this->execute($q, $vars);
+
+        $rows = $this->getDataRowsAsArrays($ps);
+        $urls = array();
+        foreach($rows as $row){
+            $urls[] = $row['short_url'];
+        }
+        return $urls;
+    }
+
+    public function saveClickCount($short_url, $click_count) {
+        $q  = "UPDATE #prefix#links_short ";
+        $q .= "SET click_count=:click_count WHERE short_url=:short_url; ";
+        $vars = array(
+            ':click_count'=>(int)$click_count,
+            ':short_url'=>$short_url
+        );
+        if ($this->profiler_enabled) Profiler::setDAOMethod(__METHOD__);
+        $ps = $this->execute($q, $vars);
+
+        return $this->getUpdateCount($ps);
+    }
 }
